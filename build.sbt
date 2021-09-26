@@ -3,6 +3,7 @@ import org.scalajs.linker.interface.ModuleInitializer
 
 val webapp = project
   .in(file("."))
+  .dependsOn(shared)
   .settings(
     libraryDependencies ++= List(
       "com.raquo" %%% "laminar" % "0.13.1",
@@ -24,8 +25,21 @@ val webapp = project
   .aggregate(sw)
 
 lazy val sw = project
+  .dependsOn(shared)
+  .settings(
+    Compile / scalaJSModuleInitializers ++= List(
+      ModuleInitializer.mainMethod("default.ServiceWorker", "init").withModuleID("sw"),
+    )
+  )
+  .settings(commonSettings)
+  .enablePlugins(ScalaJSPlugin)
+
+lazy val shared = project
   .settings(
     libraryDependencies ++= List(
+      "com.github.torrentdam" %%% "common" % "1.0.0",
+      "io.circe" %%% "circe-parser" % "0.15.0-M1",
+      "io.circe" %%% "circe-generic" % "0.15.0-M1",
       ("org.scala-js" %%% "scalajs-dom" % "1.1.0").cross(CrossVersion.for3Use2_13),
     ),
     Compile / scalaJSModuleInitializers ++= List(

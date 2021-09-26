@@ -10,6 +10,11 @@ import pages.{SearchPage, TorrentPage}
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.chaining.*
 import org.scalajs.dom.experimental.Fetch
+import org.scalajs.dom.experimental.serviceworkers.Transferable
+import org.scalajs.dom.raw.MessageChannel
+import org.scalajs.dom.window
+import scala.scalajs.js.Array
+import dom.experimental.serviceworkers._
 
 object Main {
 
@@ -21,25 +26,29 @@ object Main {
       .sendText(commandToString)
       .build(managed = true, autoReconnect = true)
 
-    val indexVar = Var[Option[TorrentIndex]](None).tap { it =>
-      val url = "https://raw.githubusercontent.com/TorrentDam/torrents/master/index/index.json"
-      for
-        response <- Fetch.fetch(url).toFuture
-        body <- response.text.toFuture
-      do
-        val entries = TorrentIndex.Entries.fromString(body).toTry.get
-        val index = TorrentIndex(entries)
-        it.set(Some(index))
-    }
+    val activeServiceWorker = EventStream
+      .fromJsPromise(
+        dom.window.navigator.serviceWorker.ready
+      )
+      .map(_.active)
 
     val searchResultsVar = Var(Option.empty[TorrentIndex.Results])
 
     def requestSearch(query: String): Unit =
-      indexVar.now() match
-        case Some(index) =>
-          val results = index.search(query)
-          searchResultsVar.set(Some(results))
-        case None =>
+      val channel = new MessageChannel()
+      channel.port1.onmessage = (event) =>
+        io.circe.parser.parse(event.data.toString)
+          .flatMap(_.as[TorrentIndex.Results])
+          .foreach { results =>
+            searchResultsVar.set(Some(results))
+          }
+      dom.window.navigator
+        .serviceWorker
+        .ready
+        .toFuture
+        .foreach { registration =>
+          registration.active.postMessage(query, Array(channel.port2))
+        }
 
     val rootElement =
       div(
@@ -71,13 +80,12 @@ object Main {
   }
 
   def registerServiceWorker(): Unit = {
-    import dom.experimental.serviceworkers._
 
     dom.window.navigator
       .serviceWorker
       .register("/sw.js")
       .toFuture
-      .map { _ =>
+      .map { registration =>
         dom.console.log("ServiceWorker registered")
       }
   }
